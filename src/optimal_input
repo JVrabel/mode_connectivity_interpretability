@@ -1,0 +1,86 @@
+import torch
+import argparse
+import numpy as np
+import torch.nn.functional as F
+
+
+# Argument Parser
+parser = argparse.ArgumentParser(description='Testing script for PyTorch model.')
+parser.add_argument('--model_path', type=str, required=True, help='Path to the saved model')
+
+
+args = parser.parse_args()
+
+
+# Setup target device 
+#device = torch.device("cpu")
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Import the model class from your specific location.
+from model_builder import SimpleMLP
+
+# Hyperparameters (same as train.py)
+INPUT_SHAPE = 2500
+OUTPUT_SHAPE = 12
+HIDDEN_UNITS1 = 128  # Number of neurons in the first hidden layer
+HIDDEN_UNITS2 = 64  # Number of neurons in the second hidden layer
+BATCH_SIZE = 128
+
+
+# Initialize the model
+model = SimpleMLP(
+    input_shape=INPUT_SHAPE,
+    hidden_units1=HIDDEN_UNITS1,
+    hidden_units2=HIDDEN_UNITS2,
+    output_shape=OUTPUT_SHAPE
+).to(device)
+
+# Load the saved state_dict into the model
+model_path = args.model_path
+model_state_dict = torch.load(model_path, map_location=torch.device('cpu'))
+model.load_state_dict(model_state_dict)
+
+
+# Assume 'model' is your trained MLP and 'device' is your target device
+model = model.to(device)
+model.eval()  # Set the model to evaluation mode
+
+# Freeze model parameters
+for param in model.parameters():
+    param.requires_grad = False
+
+# Initialize input with random noise
+input_shape = (1, INPUT_SHAPE)  # Batch size of 1, and whatever your input shape is
+initial_noise = torch.randn(input_shape, requires_grad=True, device=device)
+
+# Define optimizer for the noise
+optimizer = torch.optim.Adam([initial_noise], lr=0.1)
+
+# Target neuron index
+target_neuron = 5  # Replace this with the index of the neuron you want to excite
+
+# Optimization loop
+n_iterations = 1000
+for i in range(n_iterations):
+    optimizer.zero_grad()
+    
+    # Forward pass
+    output = model(initial_noise)
+    
+    # Custom loss function
+    # Excite the target neuron while inhibiting others
+    # loss = -output[0, target_neuron] + F.relu(output).sum() - F.relu(output[0, target_neuron]) # this should be used if there is not a softmax layer
+    loss = -output[0, target_neuron]
+    # Backward pass
+    loss.backward()
+    
+    # Update the noise
+    optimizer.step()
+
+    # Print progress
+    if i % 100 == 0:
+        print(f"Iteration {i}, Loss: {loss.item()}")
+
+# The optimized noise
+optimized_input = initial_noise.detach().cpu().numpy()
